@@ -239,7 +239,13 @@ API（v1 の案）:
   - 撮影アプリには、ライブビューの接続ボタン、通信状態（通知・API の応答時間・ライブビューの fps・CMS に届くか）、小さなログ欄がある。tailnet 経由のライブビューは約 8.7 fps・1.9 Mbps（2026-10-09）
   - パンチルトはコードだけで、実機では未確認。85pi の I2C の有効化（sudo）と配線の確認のあと、設定の `pantilt.enabled` を true にする
   - ライブビューは上下が逆さまに写っている（今の取り付けの向き）。パンチルトに載せたあとで、設定の `camera.rotate180` を決める
-- **Phase 2**: super_imx519 の処理ジョブと CMS への登録、rocm_opencv_server の `/v1/photo-label`、取り込みと登録の自動化（systemd timer）
+- **Phase 2**: super_imx519 の処理ジョブと CMS への登録、rocm_opencv_server の `/v1/photo-label`、取り込みと登録の自動化
+  - 2026-10-09 に一部を実装: スタジオ（`src/super_imx519/studio.py`。home-linux の systemd のユーザーサービス `super-imx519-studio`、tailnet のアドレス `100.108.168.101:8520` だけで待ち受け）
+    - 10 秒ごと（撮影が終わったら撮影アプリが知らせてすぐ）にエッジから取り込み、schema_version 1 で商品のあるセッションを 1 つずつ処理する
+    - 処理（`pipeline/process.py`）: 露出ごとに DNG を現像して位置合わせ・平均 → Mertens で HDR → 長辺 2048px の `final.jpg`（品質 95）と画面用の `preview.jpg`。16MP × 24 枚で約 35 秒
+    - 撮影アプリは、エッジ経由（`/api/studio/...`）で状態・進捗・完成画像を読み、完成待ちのあいだは進捗バーを出す
+    - home-linux は tailscale serve の操作に sudo が要るので、スタジオは tailnet のアドレスに HTTP で直接待ち受ける（通信は WireGuard の中）
+  - まだ: 色補正（カラーカード）、歪み補正と壁面座標系、写真の区分の判定、CMS への登録
 - **Phase 3**: パンチルト微動による超解像、ArUco によるずれ表示、ピント合わせの補助
 
 ## 撮影設計

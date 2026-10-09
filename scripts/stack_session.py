@@ -25,6 +25,7 @@ import cv2
 import numpy as np
 
 from super_imx519.pipeline import stacking
+from super_imx519.pipeline.process import merge_exposures, session_evs
 
 
 def load(path: Path, source: str, half: bool) -> np.ndarray:
@@ -56,7 +57,7 @@ def label(image: np.ndarray, text: str) -> np.ndarray:
 
 def process(session_dir: Path, out: Path, source: str, half: bool, crop: int) -> dict:
     session = json.loads((session_dir / "session.json").read_text())
-    evs = session.get("ev") or session["sequence"]["ev"]  # v0 / v1
+    evs = session_evs(session)
     out.mkdir(parents=True, exist_ok=True)
     report: dict = {"source": source, "half_size": half, "ev": {}}
 
@@ -101,20 +102,7 @@ def process(session_dir: Path, out: Path, source: str, half: bool, crop: int) ->
 
     # HDR: 露出違いを EV 0 に合わせてから融合する
     if len(evs) > 1:
-        ref_ev = min(evs, key=abs)
-        ref_gray = stacking._gray(stacked_display[ref_ev].astype(np.float32))
-        aligned, report["hdr_align"] = [], {}
-        for ev in evs:
-            img = stacked_display[ev].astype(np.float32)
-            if ev != ref_ev:
-                h, cc = stacking.estimate_warp(ref_gray, stacking._gray(img))
-                img = stacking.warp_to_ref(img, h)
-                report["hdr_align"][f"{ev:+.1f}"] = {
-                    "shift_px": (round(float(h[0, 2]), 3), round(float(h[1, 2]), 3)),
-                    "ecc": round(cc, 5),
-                }
-            aligned.append(img)
-        hdr = stacking.merge_mertens(aligned)
+        hdr, report["hdr_align"] = merge_exposures(stacked_display)
         hdr_single = stacking.merge_mertens([single_display[ev].astype(np.float32) for ev in evs])
         cv2.imwrite(str(out / "hdr_stacked.png"), stacking.to_uint16(hdr))
         cv2.imwrite(

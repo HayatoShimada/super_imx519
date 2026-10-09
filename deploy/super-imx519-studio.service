@@ -1,0 +1,15 @@
+# systemd のユーザーサービス（home-linux）。~/.config/systemd/user/ に置いて
+#   systemctl --user enable --now super-imx519-studio
+# home-linux の tailnet のアドレスだけで待ち受ける（tailnet の外や LAN からは届かない）。
+# tailscale が起動する前だと待ち受けに失敗するので、そのときはやり直す
+[Unit]
+Description=super_imx519 studio (ingest from edge, make finished images)
+
+[Service]
+WorkingDirectory=%h/orca/super_imx519
+ExecStart=%h/orca/super_imx519/.venv/bin/python -m super_imx519.studio --host 100.108.168.101 --port 8520
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

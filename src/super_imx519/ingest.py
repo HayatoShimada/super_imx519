@@ -16,6 +16,7 @@ import json
 import shutil
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 DEFAULT_DEST = Path("~/data/super_imx519/sessions").expanduser()
@@ -46,7 +47,13 @@ class Edge:
     def manifest(self, session_id: str) -> dict:
         return self.json(f"/api/sessions/{session_id}/manifest")
 
-    def download(self, session_id: str, name: str, target: Path) -> tuple[int, str]:
+    def download(
+        self,
+        session_id: str,
+        name: str,
+        target: Path,
+        on_chunk: Callable[[int], None] | None = None,
+    ) -> tuple[int, str]:
         """ファイルを target に書き、(サイズ, sha256) を返す。"""
         h, size = hashlib.sha256(), 0
         path = f"/api/sessions/{session_id}/files/{urllib.parse.quote(name)}"
@@ -55,6 +62,8 @@ class Edge:
                 f.write(chunk)
                 h.update(chunk)
                 size += len(chunk)
+                if on_chunk:
+                    on_chunk(len(chunk))
         return size, h.hexdigest()
 
     def delete(self, session_id: str, manifest_sha256: str) -> None:
@@ -79,8 +88,24 @@ def matches(directory: Path, manifest: dict) -> bool:
     )
 
 
-def ingest_session(edge: Edge, session_id: str, dest: Path, keep: bool = False) -> Path:
+def ingest_session(
+    edge: Edge,
+    session_id: str,
+    dest: Path,
+    keep: bool = False,
+    progress: Callable[[float, float, str], None] | None = None,
+) -> Path:
+    """progress(済んだバイト数, 全体のバイト数, 説明) で進み具合を知らせる。"""
     manifest = edge.manifest(session_id)
+    total = sum(f["size"] for f in manifest["files"])
+    done = 0
+
+    def on_chunk(n: int) -> None:
+        nonlocal done
+        done += n
+        if progress:
+            progress(done, total, f"取り込み {done / 1e6:.0f} / {total / 1e6:.0f} MB")
+
     final = dest / session_id
     if final.exists():
         # 前回、取り込んだあとに消せなかった場合。中身が同じなら消すだけにする
@@ -92,7 +117,7 @@ def ingest_session(edge: Edge, session_id: str, dest: Path, keep: bool = False) 
         partial.mkdir(parents=True)
         try:
             for f in manifest["files"]:
-                size, digest = edge.download(session_id, f["name"], partial / f["name"])
+                size, digest = edge.download(session_id, f["name"], partial / f["name"], on_chunk)
                 if (size, digest) != (f["size"], f["sha256"]):
                     raise IngestError(f"{session_id}/{f['name']} が manifest と一致しません")
             files = {k: v for k, v in manifest.items() if k != "sha256"}

@@ -5,13 +5,16 @@ description = "IMX519 で撮った服の写真を、実物にある情報だけ�
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.115",
     "numpy>=2.0",
     "opencv-python-headless>=4.10",
     "rawpy>=0.24",
+    "uvicorn>=0.30",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.13",
     "pytest>=8.0",
     "ruff>=0.6",
 ]
