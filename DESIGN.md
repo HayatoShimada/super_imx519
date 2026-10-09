@@ -42,7 +42,7 @@ flowchart LR
 
   Cam -- "CSI-2（制御は RP1 の I2C）" --> App
   PT -- "i2c-1 (GPIO2/3)" --> App
-  Phone -- "tailnet :12443" --> App
+  Phone -- "camera.85-store.com（tailnet のみ）" --> App
   App -- "下書きを作る（REST）" --> CMS
   Studio -- "セッションを取り込む" --> App
   Studio -- "区分の判定" --> ROCm
@@ -125,7 +125,7 @@ flowchart LR
 ### 全体の流れ
 
 ```text
-[スマホ] ─ https://85pi.taila713c8.ts.net:12443 ─▶ [85pi: imx519_edge]
+[スマホ] ─ https://camera.85-store.com ─▶ [85pi: imx519_edge]
   1. 商品を入力（既存の値から選ぶ）──▶ CMS の REST: brands / products を読む（10 分キャッシュ）
                               └─▶ POST /api/products（保留の下書き）→ CMS の商品 ID
   2. 撮影（正面・背面…を同じ商品で続けて撮る）→ session.json に CMS の商品 ID を記録
@@ -163,6 +163,12 @@ flowchart LR
 - **状態**: `idle`（ライブビュー中）/ `moving` / `capturing` / `error`。ジョブは 1 本ずつ実行する（排他ロック）
 - **カメラの設定**: フル解像度の still 設定に lores ストリームを付け、常にそのモードで動かす（9 fps）。ライブビューは lores をソフトウェアで MJPEG にする（Pi 5 には JPEG や H.264 のハードウェアのエンコーダが無い）。撮影中はライブビューを止める
 - **公開**: `127.0.0.1:8519` で待ち受け、`tailscale serve --https=12443`（tailnet only）で出す。85pi のほかのサービスと同じやり方。ACL は変えない。`Tailscale-User-Login` ヘッダから操作者を取り、セッションに記録する
+- **アドレス**: `https://camera.85-store.com`（2026-10-09）。85pi の 443 番は tailscale serve が使っているので、85store-cms と同じ形の入口を立てた（imx519_edge の `deploy/camera/`）
+  - tailnet に「camera」（`tag:camera`、`100.117.163.90`）として参加する tailscale のサイドカーと、TLS を終端する Caddy（証明書は Let's Encrypt から Cloudflare の DNS で取る）
+  - Cloudflare の 85-store.com に `camera` の A レコード（camera 端末の tailnet の IPv4、プロキシなし）。tailnet の外からは届かない
+  - Caddy は tailnet 経由で 85pi の `:12443` に中継する。ACL は `tag:camera` から 85pi の 12443 番だけを許す
+  - camera 端末はタグ付きで利用者の名前が届かないので、Caddy が接続元のアドレス（`X-Camera-Client`）を渡し、撮影アプリが `tailscale whois` で操作した人を引く（記録用。権限の判断には使わない）
+  - サーバーの取り込みは、中継を通らずに `https://85pi.taila713c8.ts.net:12443` を直接呼ぶ
 - **環境**: `python3 -m venv --system-site-packages`（picamera2 と libcamera は apt のもの）に fastapi と uvicorn を入れ、systemd のユーザーサービスにする
 - **パンチルトの安全策**: 可動範囲を設定ファイルで持つ。移動のたびに full-off し、非常停止（ALL_LED_OFF）を用意する
 - **ディスクの保護**: 撮影を始める前に容量を見積もる（枚数 × 約 36 MB）。「空き − 見積もり」が予備の 5 GB を下回るなら断る（85pi はほかの用途と兼用のため）
@@ -228,7 +234,7 @@ API（v1 の案）:
 
 - **Phase 0（2026-10-09 に完了）**: 設計、リポジトリの再編、エッジの CLI を整理して session.json を v1 にする、合成の試作を super_imx519 へ移す
 - **Phase 1（2026-10-09 に実装）**: エッジのデーモンと撮影アプリ、CMS の変更（保留、写真の区分）、super_imx519 の取り込み
-  - 85pi で常駐させた（systemd のユーザーサービス `imx519-edge`、`https://85pi.taila713c8.ts.net:12443`）。撮影 → 取り込み（sha256 で照合）→ 85pi 側の削除まで、実機で通した
+  - 85pi で常駐させた（systemd のユーザーサービス `imx519-edge`、`https://camera.85-store.com`）。撮影 → 取り込み（sha256 で照合）→ 85pi 側の削除まで、実機で通した
   - CMS の変更は 85store-cms の PR #23 で本番にデプロイした（2026-10-09。同時に #22 の AI 用の MCP サーバーも出た）。撮影アプリは、CMS に保留の欄が無いと分かると下書きを作らない
   - 撮影アプリには、ライブビューの接続ボタン、通信状態（通知・API の応答時間・ライブビューの fps・CMS に届くか）、小さなログ欄がある。tailnet 経由のライブビューは約 8.7 fps・1.9 Mbps（2026-10-09）
   - パンチルトはコードだけで、実機では未確認。85pi の I2C の有効化（sudo）と配線の確認のあと、設定の `pantilt.enabled` を true にする
