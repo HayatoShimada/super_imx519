@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+# 撮影データはリポジトリの外（~/data/super_imx519/）に置く
+/captures/
