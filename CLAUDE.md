@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 現状
 
-設計段階。サーバー側の合成の試作（`src/super_imx519/pipeline/stacking.py`、`scripts/stack_session.py`）がある。ドキュメントは日本語で書く。
+Phase 1 まで実装済み。サーバー側は、エッジからの取り込み（`src/super_imx519/ingest.py`）と合成の試作（`src/super_imx519/pipeline/stacking.py`、`scripts/stack_session.py`）がある。ドキュメントは日本語で書く。
 
 - テストとリント: `uv sync && uv run pytest`、`uv run ruff check . && uv run ruff format .`
+- エッジからの取り込み: `uv run python -m super_imx519.ingest`（85pi の `https://85pi.taila713c8.ts.net:12443` から `~/data/super_imx519/sessions/` へ。照合したらエッジ側を消す。`--keep` で残す）
 
 - `DESIGN.md`: 設計の判断・構成・撮影技法・検証計画・未決事項。作業の前に必ず読む
 - `docs/`: 継続して参照する資料（索引は `docs/README.md`）

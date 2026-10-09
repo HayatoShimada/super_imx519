@@ -172,22 +172,24 @@ API（v1 の案）:
 | メソッド | パス | 内容 |
 | --- | --- | --- |
 | GET | `/api/status` | 状態、カメラの固定値、パンチルトの位置、空き容量、実行中のジョブ |
-| GET | `/api/preview.mjpg` | ライブビュー |
+| GET | `/api/preview.mjpg` / `/api/preview.jpg` | ライブビュー（MJPEG / 1 枚） |
 | POST | `/api/camera/meter` | AE / AWB / AF を一度走らせ、測った値を固定値として持つ |
-| PUT | `/api/camera/settings` | 露光時間・`ColourGains`・`LensPosition` を手で設定する |
+| PUT | `/api/camera/settings` | 固定値（基準の露光時間・`ColourGains`・`LensPosition`）を手で変える |
+| POST | `/api/camera/auto` | 固定をやめて自動に戻す |
 | POST | `/api/pantilt/move` | 移動（tick 単位、近づける方向も指定できる）。移動後は自動で full-off |
 | POST | `/api/pantilt/stop` | 非常停止 |
 | GET / PUT | `/api/pantilt/presets` | 構図のプリセット |
 | GET | `/api/cms/options` | 区分・ブランド・カテゴリ・品目の選択肢（CMS から作ってキャッシュ） |
-| GET | `/api/cms/products?hold=1` | 保留中の下書き |
-| POST | `/api/cms/products` | 下書きを作る |
+| GET | `/api/cms/products` | 保留中の下書き |
+| GET | `/api/cms/products/{id}` | 商品 1 件（撮影ジョブはこれを写して session.json に入れる） |
+| POST | `/api/cms/products` | 下書きを作る（`brand_name` を渡すと、無いブランドを先に作る） |
 | POST | `/api/jobs` | 撮影ジョブ（`cms_product_id` は必須。EV、枚数、微動の位置数と量、照明、メモ） |
 | GET / DELETE | `/api/jobs/{id}` | 進捗 / 中止 |
-| WS | `/api/events` | 状態と進捗を流す |
+| GET | `/api/events` | 状態と進捗を Server-Sent Events で流す（EventSource が切れても自動でつなぎ直すので、WebSocket ではなくこちらにした） |
 | GET | `/api/sessions` | 85pi に残っているセッション |
 | GET | `/api/sessions/{id}/manifest` | ファイル名・サイズ・sha256 |
 | GET | `/api/sessions/{id}/files/{name}` | ファイルのダウンロード |
-| DELETE | `/api/sessions/{id}` | 消す（取り込み側が sha256 の一致を確かめてから呼ぶ） |
+| DELETE | `/api/sessions/{id}?manifest_sha256=…` | 消す。取り込み側が全ファイルの sha256 を確かめてから、manifest の sha256 を添えて呼ぶ（一致しなければ 409） |
 
 ### セッションの形式（schema_version 1。エッジが決める）
 
@@ -205,7 +207,8 @@ API（v1 の案）:
 ### 転送（決定。サーバーが取りに行く）
 
 - super_imx519 の取り込みが、エッジの API でセッションの一覧と manifest を取り、ファイルを落として sha256 で照合し、`~/data/super_imx519/sessions/` に置いてから、エッジの `DELETE` を呼ぶ
-- 85pi にサーバーの認証情報を置かずに済む。最初は手で実行し、後で systemd timer にする
+- 85pi にサーバーの認証情報を置かずに済む。最初は手で実行し（`uv run python -m super_imx519.ingest`）、後で systemd timer にする
+- 撮影中のセッションは `~/captures/.partial-<id>` に書き、終わって manifest を書いてから `<id>` に移す。一覧と取り込みの対象は、manifest のあるものだけ
 
 ### 85store-cms への変更（決定。85store-cms のリポジトリで PR を出す）
 
@@ -224,8 +227,11 @@ API（v1 の案）:
 ### 実装の段階
 
 - **Phase 0（2026-10-09 に完了）**: 設計、リポジトリの再編、エッジの CLI を整理して session.json を v1 にする、合成の試作を super_imx519 へ移す
-- **Phase 1**: エッジのデーモンと撮影アプリ、CMS の変更（保留、写真の区分）、super_imx519 の取り込み
-  - 先に手で行うこと: 85pi の I2C の有効化（sudo）、パンチルトの配線の確認
+- **Phase 1（2026-10-09 に実装）**: エッジのデーモンと撮影アプリ、CMS の変更（保留、写真の区分）、super_imx519 の取り込み
+  - 85pi で常駐させた（systemd のユーザーサービス `imx519-edge`、`https://85pi.taila713c8.ts.net:12443`）。撮影 → 取り込み（sha256 で照合）→ 85pi 側の削除まで、実機で通した
+  - CMS の変更は 85store-cms のブランチ `feature/shopify-hold`。デプロイするまでは、撮影アプリは下書きを作らない（CMS に保留の欄が無いと分かると断る）
+  - パンチルトはコードだけで、実機では未確認。85pi の I2C の有効化（sudo）と配線の確認のあと、設定の `pantilt.enabled` を true にする
+  - ライブビューは上下が逆さまに写っている（今の取り付けの向き）。パンチルトに載せたあとで、設定の `camera.rotate180` を決める
 - **Phase 2**: super_imx519 の処理ジョブと CMS への登録、rocm_opencv_server の `/v1/photo-label`、取り込みと登録の自動化（systemd timer）
 - **Phase 3**: パンチルト微動による超解像、ArUco によるずれ表示、ピント合わせの補助
 
